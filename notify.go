@@ -68,14 +68,25 @@ func (notify *Notify) Watch(ctx context.Context, topic string, f func(msg interf
             }
         }
         // multi workers
+        ctr := make([]chan struct{}, h.workerSize)
         for i := uint32(0); i < h.workerSize; i++ {
+            quit := make(chan struct{}, 1)
+            ctr[i] = quit
             go func() {
-                for msg := range h.ch {
-                    f(msg)
+                for {
+                    select {
+                    case msg := <-h.ch:
+                        f(msg)
+                    case <-quit:
+                       return
+                    }
                 }
             }()
         }
         <-h.quit
+        for _, ch := range ctr {
+           ch<- struct{}{}
+        }
     }()
     v, ok := notify.consumer.LoadOrStore(topic, &consumers{
         consumers: []handler{h},
